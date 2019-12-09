@@ -1,0 +1,8 @@
+name: 'Entity reference display switcher'
+type: module
+description: 'Provides formatter for entity reference fields, which allows to switch entity reference field view mode.'
+package: Custom
+core: 8.x
+
+dependencies:
+  - paragraphs:paragraphs
