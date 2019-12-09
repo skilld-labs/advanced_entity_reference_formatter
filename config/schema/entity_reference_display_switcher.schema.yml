@@ -1,9 +1,0 @@
-field.formatter.settings.entity_reference_display_switcher:
-  type: field.formatter.settings.entity_reference_entity_view
-  label: 'Entity reference display switcher format settings'
-  mapping:
-    view_mode_delta:
-      type: sequence
-      label: 'View mode delta'
-      sequence:
-        type: string

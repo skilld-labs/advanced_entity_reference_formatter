@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\entity_reference_display_switcher\Plugin\Field\FieldFormatter;
+namespace Drupal\entity_reference_dynamic_display\Plugin\Field\FieldFormatter;
 
 use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Field\FieldItemListInterface;
@@ -8,27 +8,27 @@ use Drupal\Core\Field\Plugin\Field\FieldFormatter\EntityReferenceEntityFormatter
 use Drupal\Core\Form\FormStateInterface;
 
 /**
- * Plugin implementation of the 'ParagraphsViewModeSwitcherFormatter' formatter.
+ * Plugin implementation of the 'DynamicDisplay' formatter.
  *
  * @FieldFormatter(
- *   id = "entity_reference_display_switcher",
- *   label = @Translation("Entity reference display switcher"),
+ *   id = "dynamic_display",
+ *   label = @Translation("Dynamic Display"),
  *   field_types = {
  *     "entity_reference",
  *     "entity_reference_revisions"
  *   }
  * )
  */
-class EntityReferenceDisplaySwitcherFormatter extends EntityReferenceEntityFormatter {
+class DynamicDisplay extends EntityReferenceEntityFormatter {
 
   /**
    * {@inheritdoc}
    */
   public static function defaultSettings() {
     return [
-      'view_mode' => 'default',
-      'view_mode_delta' => [],
-      'link' => FALSE,
+      'override' => 'none',
+      'bundle_modes' => [],
+      'delta_modes' => [],
     ] + parent::defaultSettings();
   }
 
@@ -38,48 +38,95 @@ class EntityReferenceDisplaySwitcherFormatter extends EntityReferenceEntityForma
   public function settingsForm(array $form, FormStateInterface $form_state) {
     $elements = parent::settingsForm($form, $form_state);
     $elements['view_mode']['#title'] = $this->t('Default view mode');
-    $elements['view_mode_delta'] = [
+    $target_type = $this->getFieldSetting('target_type');
+    $handler_settings = $this->getFieldSetting('handler_settings');
+    $target_bundles = $handler_settings['target_bundles'];
+    $all_view_modes = $this->entityDisplayRepository->getViewModeOptions($target_type);
+    $field_name = $this->fieldDefinition->getName();
+    $settings = $this->getSettings();
+    $elements['override'] = [
+      '#type' => 'radios',
+      '#options' => [
+        'none' => $this->t('None'),
+        'bundle' => $this->t('Select view modes based on target bundle'),
+        'delta' => $this->t('Select view modes based on item delta'),
+      ],
+      '#title' => $this->t('Override options'),
+      '#default_value' => $settings['override'],
+    ];
+    $elements['bundle_modes'] = [
+      '#type' => 'container',
+      '#attributes' => ['id' => 'bundle-view-mode-wrapper'],
+      '#states' => [
+        'visible' => [
+          ':input[name="fields[' . $field_name . '][settings_edit_form][settings][override]"]' => ['value' => 'bundle'],
+        ],
+      ],
+    ];
+    foreach ($target_bundles as $bundle) {
+      // Get view modes for current bundle only.
+      $bundle_view_modes = $this->entityDisplayRepository->getViewModeOptionsByBundle($target_type, $bundle);
+      $elements['bundle_modes'][$bundle] = [
+        '#type' => 'select',
+        '#options' => $bundle_view_modes,
+        '#title' => $this->t('View mode for bundle %bundle', ['%bundle' => $bundle]),
+        '#default_value' => isset($settings['bundle_modes'][$bundle]) ? $settings['bundle_modes'][$bundle] : NULL,
+      ];
+    }
+    $elements['delta_modes'] = [
       '#type' => 'container',
       '#attributes' => ['id' => 'view-mode-delta-wrapper'],
+      '#states' => [
+        'visible' => [
+          ':input[name="fields[' . $field_name . '][settings_edit_form][settings][override]"]' => ['value' => 'delta'],
+        ],
+      ],
     ];
-    $view_modes = $this->entityDisplayRepository->getViewModeOptions($this->getFieldSetting('target_type'));
-    $setting = $this->getSettings();
     $items = $form_state->get('delta_items');
     if (is_null($items)) {
-      $items = count($this->getSetting('view_mode_delta')) ?: 0;
+      $items = count($settings['delta_modes']) ?: 0;
       $form_state->set('delta_items', $items);
     }
     for ($i = 0; $i < $items; $i++) {
-      $elements['view_mode_delta'][$i] = [
+      $elements['delta_modes'][$i] = [
         '#type' => 'select',
-        '#options' => $view_modes,
+        '#options' => $all_view_modes,
         '#title' => $this->t('View mode for delta %delta', ['%delta' => $i]),
-        '#default_value' => $setting["view_mode_delta"][$i],
+        '#default_value' => isset($settings['delta_modes'][$i]) ? $settings['delta_modes'][$i] : NULL,
       ];
     }
-
-    $form['buttons']['actions'] = [
+    $form['buttons'] = [
       '#type' => 'container',
     ];
     $elements['buttons']['add_more'] = [
       '#type' => 'submit',
       '#name' => 'add_more',
       '#value' => $this->t('Add delta'),
-      '#submit' => [[get_class($this), 'addMoreSubmit']],
+      '#submit' => [[get_class($this), 'addMoreDeltaSubmit']],
       '#processed' => FALSE,
+      '#states' => [
+        'visible' => [
+          ':input[name="fields[' . $field_name . '][settings_edit_form][settings][override]"]' => ['value' => 'delta'],
+        ],
+      ],
       '#ajax' => [
-        'callback' => [get_class($this), 'ajaxSubmit'],
+        'callback' => [get_class($this), 'ajaxDeltaSubmit'],
         'wrapper' => 'view-mode-delta-wrapper',
       ],
     ];
     $elements['buttons']['remove'] = [
       '#processed' => FALSE,
       '#type' => 'submit',
-      '#name' => 'add_more',
+      '#name' => 'remove',
       '#value' => $this->t('Remove last'),
-      '#submit' => [[get_class($this), 'removeSubmit']],
+      '#submit' => [[get_class($this), 'removeDeltaSubmit']],
+      '#states' => [
+        'visible' => [
+          ':input[name="fields[' . $field_name . '][settings_edit_form][settings][override]"]' => ['value' => 'delta'],
+        ],
+      ],
       '#ajax' => [
-        'callback' => [get_class($this), 'ajaxSubmit'],
+        'callback' => [get_class($this), 'ajaxDeltaSubmit'],
         'wrapper' => 'view-mode-delta-wrapper',
       ],
     ];
@@ -95,7 +142,7 @@ class EntityReferenceDisplaySwitcherFormatter extends EntityReferenceEntityForma
    * @param \Drupal\Core\Form\FormStateInterface $form_state
    *   The current state of the form.
    */
-  public static function addMoreSubmit(array $form, FormStateInterface $form_state) {
+  public static function addMoreDeltaSubmit(array $form, FormStateInterface $form_state) {
     $items = $form_state->get('delta_items');
     $form_state->set('delta_items', $items + 1);
     $form_state->setRebuild();
@@ -109,10 +156,12 @@ class EntityReferenceDisplaySwitcherFormatter extends EntityReferenceEntityForma
    * @param \Drupal\Core\Form\FormStateInterface $form_state
    *   The current state of the form.
    */
-  public static function removeSubmit(array $form, FormStateInterface $form_state) {
+  public static function removeDeltaSubmit(array $form, FormStateInterface $form_state) {
     $items = $form_state->get('delta_items');
-    $form_state->set('delta_items', $items - 1);
-    $form_state->setRebuild();
+    if ($items >= 1) {
+      $form_state->set('delta_items', $items - 1);
+      $form_state->setRebuild();
+    }
   }
 
   /**
@@ -126,11 +175,11 @@ class EntityReferenceDisplaySwitcherFormatter extends EntityReferenceEntityForma
    * @return array
    *   Items form element.
    */
-  public static function ajaxSubmit(array $form, FormStateInterface $form_state) {
+  public static function ajaxDeltaSubmit(array $form, FormStateInterface $form_state) {
     $triggering_element = $form_state->getTriggeringElement();
     // Button located on another level inside form, so we are traveling up.
     array_splice($triggering_element['#array_parents'], -2);
-    $triggering_element['#array_parents'][] = 'view_mode_delta';
+    $triggering_element['#array_parents'][] = 'delta_modes';
     $element = NestedArray::getValue($form, $triggering_element['#array_parents']);
     return $element;
   }
@@ -140,13 +189,26 @@ class EntityReferenceDisplaySwitcherFormatter extends EntityReferenceEntityForma
    */
   public function settingsSummary() {
     $summary = parent::settingsSummary();
-    $view_mode_delta = $this->getSetting('view_mode_delta') ?: [];
     $view_modes = $this->entityDisplayRepository->getViewModeOptions($this->getFieldSetting('target_type'));
-    foreach ($view_mode_delta as $delta => $view_mode) {
-      $summary[] = t('Delta #@delta Rendered as @mode', [
-        '@delta' => substr($delta, 10),
-        '@mode' => isset($view_modes[$view_mode_delta[$delta]]) ? $view_modes[$view_mode_delta[$delta]] : $view_mode_delta[$view_mode_delta[$delta]],
-      ]);
+
+    $override = $this->getSetting('override');
+    if ($override == 'bundle') {
+      $bundle_modes = $this->getSetting('bundle_modes') ?: [];
+      foreach ($bundle_modes as $bundle => $view_mode) {
+        $summary[] = t('Bundle #@bundle Rendered as @mode', [
+          '@bundle' => $bundle,
+          '@mode' => isset($view_modes[$view_mode]) ? $view_modes[$view_mode] : $view_mode,
+        ]);
+      }
+    }
+    elseif ($override == 'delta') {
+      $delta_modes = $this->getSetting('delta_modes') ?: [];
+      foreach ($delta_modes as $delta => $view_mode) {
+        $summary[] = t('Delta #@delta Rendered as @mode', [
+          '@delta' => $delta,
+          '@mode' => isset($view_modes[$view_mode]) ? $view_modes[$view_mode] : $view_mode,
+        ]);
+      }
     }
 
     return $summary;
@@ -158,11 +220,15 @@ class EntityReferenceDisplaySwitcherFormatter extends EntityReferenceEntityForma
   public function viewElements(FieldItemListInterface $items, $langcode) {
     // We duplicate code of parent method here to avoid duplicate render
     // of entity against replacing item in result array.
-    $view_mode = $this->getSetting('view_mode');
-    $view_mode_delta = $this->getSetting('view_mode_delta') ?: [];
+    $override = $this->getSetting('override');
+    $bundle_modes = $this->getSetting('bundle_modes') ?: [];
+    $delta_modes = $this->getSetting('delta_modes') ?: [];
     $elements = [];
 
     foreach ($this->getEntitiesToView($items, $langcode) as $delta => $entity) {
+      // Default view mode.
+      $view_mode = $this->getSetting('view_mode');
+
       $recursive_render_id = $items->getFieldDefinition()
         ->getTargetEntityTypeId()
         . $items->getFieldDefinition()->getTargetBundle()
@@ -190,15 +256,14 @@ class EntityReferenceDisplaySwitcherFormatter extends EntityReferenceEntityForma
         return $elements;
       }
       $view_builder = $this->entityTypeManager->getViewBuilder($entity->getEntityTypeId());
-      // Switch view mode if needed.
-      if (isset($view_mode_delta[$delta])) {
-        $elements[$delta] = $view_builder->view($entity, $view_mode_delta[$delta], $entity->language()
-          ->getId());
+      // Use specific view mode if needed.
+      if ($override == 'bundle' && isset($bundle_modes[$entity->bundle()])) {
+        $view_mode = $bundle_modes[$entity->bundle()];
       }
-      else {
-        $elements[$delta] = $view_builder->view($entity, $view_mode, $entity->language()
-          ->getId());
+      elseif ($override == 'delta' && isset($delta_modes[$delta])) {
+        $view_mode = $delta_modes[$delta];
       }
+      $elements[$delta] = $view_builder->view($entity, $view_mode, $entity->language()->getId());
 
       if (!empty($items[$delta]->_attributes) && !$entity->isNew() && $entity->hasLinkTemplate('canonical')) {
         $items[$delta]->_attributes += [
