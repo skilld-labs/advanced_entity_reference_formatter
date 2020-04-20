@@ -82,12 +82,12 @@ class DynamicDisplay extends EntityReferenceEntityFormatter {
         ],
       ],
     ];
-    $items = $form_state->get('delta_items');
-    if (is_null($items)) {
-      $items = count($settings['delta_modes']) ?: 0;
-      $form_state->set('delta_items', $items);
+    $delta_limit = $form_state->get(['delta_limit', $field_name]);
+    if (!is_int($delta_limit)) {
+      $delta_limit = count($settings['delta_modes']) ?: 0;
+      $form_state->set(['delta_limit', $field_name], $delta_limit);
     }
-    for ($i = 0; $i < $items; $i++) {
+    for ($i = 0; $i < $delta_limit; $i++) {
       $elements['delta_modes'][$i] = [
         '#type' => 'select',
         '#options' => $all_view_modes,
@@ -113,6 +113,9 @@ class DynamicDisplay extends EntityReferenceEntityFormatter {
         'callback' => [get_class($this), 'ajaxDeltaSubmit'],
         'wrapper' => 'view-mode-delta-wrapper',
       ],
+      '#attributes' => [
+        'data-field-name' => $field_name,
+      ],
     ];
     $elements['buttons']['remove'] = [
       '#processed' => FALSE,
@@ -129,6 +132,9 @@ class DynamicDisplay extends EntityReferenceEntityFormatter {
         'callback' => [get_class($this), 'ajaxDeltaSubmit'],
         'wrapper' => 'view-mode-delta-wrapper',
       ],
+      '#attributes' => [
+        'data-field-name' => $field_name,
+      ],
     ];
 
     return $elements;
@@ -143,8 +149,10 @@ class DynamicDisplay extends EntityReferenceEntityFormatter {
    *   The current state of the form.
    */
   public static function addMoreDeltaSubmit(array $form, FormStateInterface $form_state) {
-    $items = $form_state->get('delta_items');
-    $form_state->set('delta_items', $items + 1);
+    $triggering_element = $form_state->getTriggeringElement();
+    $field_name = $triggering_element['#attributes']['data-field-name'];
+    $delta_limit = $form_state->get(['delta_limit', $field_name]);
+    $form_state->set(['delta_limit', $field_name], $delta_limit + 1);
     $form_state->setRebuild();
   }
 
@@ -157,9 +165,11 @@ class DynamicDisplay extends EntityReferenceEntityFormatter {
    *   The current state of the form.
    */
   public static function removeDeltaSubmit(array $form, FormStateInterface $form_state) {
-    $items = $form_state->get('delta_items');
-    if ($items >= 1) {
-      $form_state->set('delta_items', $items - 1);
+    $triggering_element = $form_state->getTriggeringElement();
+    $field_name = $triggering_element['#attributes']['data-field-name'];
+    $delta_limit = $form_state->get(['delta_limit', $field_name]);
+    if ($delta_limit >= 1) {
+      $form_state->set(['delta_limit', $field_name], $delta_limit - 1);
       $form_state->setRebuild();
     }
   }
