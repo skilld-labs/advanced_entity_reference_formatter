@@ -1,0 +1,17 @@
+field.formatter.settings.dynamic_display:
+  type: field.formatter.settings.entity_reference_entity_view
+  label: 'Entity Reference Dynamic Display formatter settings'
+  mapping:
+    override:
+      type: string
+      label: 'Override option'
+    bundle_modes:
+      type: sequence
+      label: 'Bundle View mode'
+      sequence:
+        type: string
+    delta_modes:
+      type: sequence
+      label: 'Delta View mode'
+      sequence:
+        type: string
