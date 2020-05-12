@@ -1,3 +1,10 @@
+# Deprecation notice
+
+This module has been moved to https://www.drupal.org/project/entity_reference_dynamic_display
+
+Do not use this repo anymore
+
+
 # Entity Reference Dynamic Display
 Drupal 8 module that provides Dynamic Display formatter for entity reference fields, allowing to select different view modes per target bundle or delta item.
 
